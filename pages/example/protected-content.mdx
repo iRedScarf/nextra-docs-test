@@ -1,0 +1,327 @@
+import { Tabs } from 'nextra/components'
+import ProtectedContent from '../../components/ProtectedContent'
+
+# Protected Content
+
+Here you can see a password input box, which is styled after the search input box.
+
+When you enter an incorrect password, you will receive a prompt indicating that the password is incorrect.
+
+The correct password is "Let-me-see".
+
+If you wish to take another look at this password input box, you can clear the cookies for this site.
+
+---
+
+<ProtectedContent>
+
+<Tabs items={['ProtectedContent.tsx', 'PasswordInput.tsx', 'auth.ts', 'withSession.ts']}>
+  <Tabs.Tab>
+
+This is the complete code for `components/ProtectedContent.tsx`.
+
+```tsx filename="components/ProtectedContent.tsx" showLineNumbers copy
+import React, {
+  ChangeEvent,
+  FormEvent,
+  ReactNode,
+  useState
+} from "react";
+import useSWR from "swr";
+import PasswordInput from "./PasswordInput";
+
+interface ProtectedContentProps {
+  children: ReactNode;
+}
+
+// Fetcher function to be used with useSWR for data fetching
+const fetcher = (url: string) => fetch(url, { credentials: 'include' }).then((res) => res.json());
+
+// Component to wrap around content that should be protected by a password
+const ProtectedContent: React.FC<ProtectedContentProps> = ({ children }) => {
+  const [password, setPassword] = useState(""); // State for the password input
+  const [message, setMessage] = useState(""); // State for displaying messages to the user
+  const { data, error: swrError, mutate } = useSWR("/api/auth", fetcher); // Use SWR for data fetching
+
+  // Show an error message if there's a loading error
+  if (swrError) {
+    return <div className="flex items-center justify-center my-5">Loading failed, please refresh the page and retry.</div>;
+  }
+
+  // Show a loading indicator while the data is being fetched
+  if (!data) {
+    return <div className="flex items-center justify-center my-5">Loading...</div>;
+  }
+
+  // If the user is already authenticated, display the protected content
+  if (data.authenticated) {
+    return <>{children}</>;
+  }
+
+  // Handle changes to the password input field
+  const handleChange = (e: ChangeEvent<HTMLInputElement>) => {
+    setPassword(e.target.value);
+    setMessage(""); // Clear any messages when the user types
+  };
+
+  // Clear any displayed messages
+  const clearMessage = () => {
+    setMessage("");
+  };
+
+  // Handle the form submission for the password input
+  const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
+    e.preventDefault(); // Prevent the default form submission behavior
+
+    // If the password is empty, display a message and prevent submission
+    if (!password.trim()) {
+      setMessage("Please enter the password.");
+      return;
+    }
+
+    // Send a POST request to the authentication API with the provided password
+    const response = await fetch("/api/auth", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ password }), // Send the password in the request body
+    });
+
+    // If the response is OK, the password was correct, and the user is authenticated
+    if (response.ok) {
+      setMessage(""); // Clear any messages
+      mutate(); // Revalidate the SWR data to update the state
+    } else {
+      // If the response is not OK, display the error message from the server
+      const responseData = await response.json();
+      setMessage(responseData.message);
+      setPassword(""); // Clear the password field on error
+    }
+  };
+
+  return (
+    <div className="text-center">
+      <form onSubmit={handleSubmit}>
+        <PasswordInput
+          password={password}
+          handleChange={handleChange}
+          handleFocus={clearMessage}
+          handleBlur={clearMessage}
+        />
+      </form>
+      {message && <p className="text-center">{message}</p>}
+    </div>
+  );
+};
+
+export default ProtectedContent;
+
+```
+
+  </Tabs.Tab>
+  <Tabs.Tab>
+
+This is the complete code for `components/PasswordInput.tsx`.
+
+```tsx filename="components/PasswordInput.tsx" showLineNumbers copy
+import React, { ChangeEvent } from "react";
+
+interface PasswordInputProps {
+  password: string;
+  handleChange: (e: ChangeEvent<HTMLInputElement>) => void;
+  handleFocus: () => void;
+  handleBlur: () => void;
+}
+
+// Password input component with additional handlers for focus and blur events
+const PasswordInput: React.FC<PasswordInputProps> = ({
+  password,
+  handleChange,
+  handleFocus,
+  handleBlur,
+}) => {
+  return (
+    <div className="flex items-center justify-center my-5">
+      <input
+        type="password"
+        className={`
+          nx-appearance-none nx-transition-colors
+          rounded-l-lg rounded-r-none px-3 py-2 h-[33.5px]
+          nx-text-sm nx-leading-tight text-center
+          nx-bg-black/[.05] dark:nx-bg-gray-50/10
+          focus:nx-bg-white dark:focus:nx-bg-dark
+          placeholder:nx-text-gray-500 dark:placeholder:nx-text-gray-400
+          focus:placeholder:opacity-0
+          contrast-more:nx-border contrast-more:nx-border-current
+        `}
+        value={password}
+        onChange={handleChange}
+        onFocus={handleFocus} // Clear messages on focus
+        onBlur={handleBlur} // Clear messages on blur
+        placeholder="Please enter password"
+        required // Require input for form submission
+      />
+      <button
+        type="submit"
+        className={`
+        nx-appearance-none nx-transition-all active:nx-opacity-50
+        rounded-r-lg rounded-l-none p-2 h-[33.5px]
+        nx-bg-black/[.05] dark:nx-bg-gray-50/10
+        nx-text-gray-500 dark:nx-text-gray-400
+        hover:nx-text-gray-900 dark:hover:nx-text-gray-50
+        `}
+      >
+        <svg
+          fill="none"
+          viewBox="0 0 24 24"
+          stroke="currentColor"
+          className="h-[1.125rem] w-[1.125rem]"
+        >
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth="2"
+            d="M9 5l7 7-7 7"
+            className="nx-origin-center nx-transition-transform rtl:-nx-rotate-180"
+          ></path>
+        </svg>
+      </button>
+    </div>
+  );
+};
+
+// Memoize the component to prevent unnecessary re-renders
+export default React.memo(PasswordInput);
+
+```
+
+  </Tabs.Tab>
+  <Tabs.Tab>
+
+This is the complete code for `pages/api/auth.ts`.
+
+```ts filename="pages/api/auth.ts"  showLineNumbers copy
+import { withSessionRoute } from "../../lib/withSession";
+import { NextApiRequest, NextApiResponse } from "next";
+import { Session } from "iron-session";
+
+// Define an in-memory store to keep track of password attempt counts by IP address
+const loginAttemptsByIP: { [key: string]: { count: number; lastAttempt: Date } } = {};
+
+const MAX_ATTEMPTS = 10; // Maximum allowed attempts before locking out
+const LOCKOUT_TIME = 2 * 60 * 60 * 1000; // Lockout duration in milliseconds (2 hours)
+
+// API route handler for authentication
+const handler = async (req: NextApiRequest & { session: Session }, res: NextApiResponse) => {
+  // Retrieve the IP address from the request
+  let ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
+  ip = Array.isArray(ip) ? ip[0] : ip;
+  ip = typeof ip === 'string' ? ip : 'unknown';
+
+  const now = new Date();
+
+  // Get or initialize the attempt record for this IP
+  const attempts = loginAttemptsByIP[ip] || { count: 0, lastAttempt: now };
+
+  // Check if the attempts have exceeded the limit and if the lockout time has passed
+  if (attempts.count >= MAX_ATTEMPTS && now.getTime() - attempts.lastAttempt.getTime() < LOCKOUT_TIME) {
+    return res.status(429).json({ message: "Too many attempts, please try again later." });
+  }
+
+  // Handle POST requests for submitting the password
+  if (req.method === "POST") {
+    const { password } = req.body;
+
+    // Check if the provided password matches the environment variable
+    if (password === process.env.PASSWORD) {
+      req.session.authenticated = true; // Set the session as authenticated
+      await req.session.save(); // Save the session
+      // Reset the attempt record for this IP
+      loginAttemptsByIP[ip] = { count: 0, lastAttempt: now };
+      res.status(200).json({ authenticated: true });
+    } else {
+      // Update the attempt record for this IP
+      loginAttemptsByIP[ip] = { count: attempts.count + 1, lastAttempt: now };
+      res.status(401).json({ message: "Invalid password, please try again." });
+    }
+  } else if (req.method === "GET") {
+    // Handle GET requests to check if the session is authenticated
+    if (req.session.authenticated) {
+      res.status(200).json({ authenticated: true });
+    } else {
+      res.status(401).json({ message: "Not authenticated." });
+    }
+  } else {
+    // Set the allowed methods in the response header
+    res.setHeader('Allow', ['GET', 'POST'].join(', '));
+    // Return a 405 Method Not Allowed status code
+    return res.status(405).end(`Method ${req.method} Not Allowed`);
+  }
+};
+
+export default withSessionRoute(handler);
+
+```
+
+  </Tabs.Tab>
+
+  <Tabs.Tab>
+
+This is the complete code for This is the `lib/withSession.ts`.
+
+```ts filename="lib/withSession.ts" showLineNumbers copy
+// Import the required functions and types from iron-session and Next.js
+import { withIronSessionApiRoute, withIronSessionSsr } from "iron-session/next";
+import {
+  GetServerSidePropsContext,
+  GetServerSidePropsResult,
+  NextApiHandler,
+} from "next";
+
+// Define the session options including the password for the cookie encryption,
+// the cookie name, and additional cookie options
+const sessionOptions = {
+  password: process.env.SECRET_COOKIE_PASSWORD as string,
+  cookieName: "Nextra-Docs",
+  cookieOptions: {
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "strict" as "strict",
+  },
+};
+
+// Create a higher-order function to wrap API routes with session handling
+export function withSessionRoute(handler: NextApiHandler) {
+  return withIronSessionApiRoute(handler, sessionOptions);
+}
+
+// Create a higher-order function to wrap server-side rendering (SSR) handlers with session handling
+export function withSessionSsr<
+  P extends { [key: string]: unknown } = { [key: string]: unknown },
+>(
+  handler: (
+    context: GetServerSidePropsContext,
+  ) => GetServerSidePropsResult<P> | Promise<GetServerSidePropsResult<P>>,
+) {
+  return withIronSessionSsr(handler, sessionOptions);
+}
+
+// Extend the Session interface from iron-session to include an optional authenticated boolean
+declare module "iron-session" {
+  interface Session {
+    authenticated?: boolean;
+  }
+}
+
+```
+
+  </Tabs.Tab>
+</Tabs>
+
+
+
+
+
+
+
+</ProtectedContent>
